@@ -118,8 +118,10 @@ def tool_fetch_reviews(
     platforms: list[str] | None = None,
     fetch_strategy: str = "mixed",
     on_progress=None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> dict:
-    """抓取评论，支持 mixed/recent/relevant 策略"""
+    """抓取评论，支持 mixed/recent/relevant 策略 + 日期过滤"""
     if not app_store_id and not google_play_id:
         return {"error": "至少需要提供 app_store_id 或 google_play_id"}
 
@@ -133,16 +135,16 @@ def tool_fetch_reviews(
         half = max(count // 2, 1)
         if use_ios:
             try:
-                recent = fetch_app_store_reviews(app_store_id, country, half, sort="mostrecent", on_progress=on_progress)
-                helpful = fetch_app_store_reviews(app_store_id, country, half, sort="mosthelpful", on_progress=on_progress)
+                recent = fetch_app_store_reviews(app_store_id, country, half, sort="mostrecent", on_progress=on_progress, date_from=date_from, date_to=date_to)
+                helpful = fetch_app_store_reviews(app_store_id, country, half, sort="mosthelpful", on_progress=on_progress, date_from=date_from, date_to=date_to)
                 reviews.extend(recent)
                 reviews.extend(helpful)
             except Exception as e:
                 logger.warning("App Store 抓取失败: %s", e)
         if use_gplay:
             try:
-                recent = fetch_google_play_reviews(google_play_id, half, country, sort="newest", on_progress=on_progress)
-                relevant = fetch_google_play_reviews(google_play_id, half, country, sort="relevant", on_progress=on_progress)
+                recent = fetch_google_play_reviews(google_play_id, half, country, sort="newest", on_progress=on_progress, date_from=date_from, date_to=date_to)
+                relevant = fetch_google_play_reviews(google_play_id, half, country, sort="relevant", on_progress=on_progress, date_from=date_from, date_to=date_to)
                 reviews.extend(recent)
                 reviews.extend(relevant)
             except Exception as e:
@@ -152,13 +154,13 @@ def tool_fetch_reviews(
         gplay_sort = "relevant" if fetch_strategy == "relevant" else "newest"
         if use_ios:
             try:
-                ios_reviews = fetch_app_store_reviews(app_store_id, country, count, sort=ios_sort, on_progress=on_progress)
+                ios_reviews = fetch_app_store_reviews(app_store_id, country, count, sort=ios_sort, on_progress=on_progress, date_from=date_from, date_to=date_to)
                 reviews.extend(ios_reviews)
             except Exception as e:
                 logger.warning("App Store 抓取失败: %s", e)
         if use_gplay:
             try:
-                gplay_result = fetch_google_play_reviews(google_play_id, count, country, sort=gplay_sort, on_progress=on_progress)
+                gplay_result = fetch_google_play_reviews(google_play_id, count, country, sort=gplay_sort, on_progress=on_progress, date_from=date_from, date_to=date_to)
                 reviews.extend(gplay_result)
             except Exception as e:
                 logger.warning("Google Play 抓取失败: %s", e)

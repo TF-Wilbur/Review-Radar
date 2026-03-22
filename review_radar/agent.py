@@ -34,6 +34,8 @@ class ReviewRadarAgent:
         count_per_platform: int = 100,
         country: str = "us",  # 向后兼容旧调用
         fetch_strategy: str = "mixed",
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> str:
         """运行 Agent 全流程
 
@@ -96,6 +98,8 @@ class ReviewRadarAgent:
                 platforms=platforms,
                 fetch_strategy=fetch_strategy,
                 on_progress=_on_progress,
+                date_from=date_from,
+                date_to=date_to,
             )
 
         if len(countries) > 1:

@@ -27,8 +27,9 @@ CACHE_DIR = _CACHE_DIR_CFG or Path(tempfile.gettempdir()) / "review_radar_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 
-def _cache_key(app_name: str, countries: list, platforms: list, count: int) -> str:
-    raw = f"{app_name}|{'_'.join(sorted(countries))}|{'_'.join(sorted(platforms))}|{count}"
+def _cache_key(app_name: str, countries: list, platforms: list, count: int,
+               date_from: str | None = None, date_to: str | None = None) -> str:
+    raw = f"{app_name}|{'_'.join(sorted(countries))}|{'_'.join(sorted(platforms))}|{count}|{date_from or ''}|{date_to or ''}"
     return hashlib.md5(raw.encode()).hexdigest()[:16]
 
 
@@ -139,6 +140,8 @@ defaults = {
     "selected_countries": [],
     "count": 200,
     "fetch_strategy": "mixed",
+    "date_from": None,
+    "date_to": None,
     "report": None,
     "aggregated": None,
     "analyzed_reviews": None,
@@ -938,6 +941,33 @@ elif step == 3:
     )
     st.session_state.fetch_strategy = strategy_options[strategy_label]
 
+    # 日期范围过滤
+    st.markdown("**评论时间范围（可选）：**")
+    date_col1, date_col2 = st.columns(2)
+    with date_col1:
+        date_from_val = st.date_input(
+            "开始日期",
+            value=None,
+            key="date_from_input",
+            help="只抓取该日期之后的评论，留空则不限制",
+        )
+    with date_col2:
+        date_to_val = st.date_input(
+            "结束日期",
+            value=None,
+            key="date_to_input",
+            help="只抓取该日期之前的评论，留空则不限制",
+        )
+    st.session_state["date_from"] = date_from_val.strftime("%Y-%m-%d") if date_from_val else None
+    st.session_state["date_to"] = date_to_val.strftime("%Y-%m-%d") if date_to_val else None
+    if date_from_val or date_to_val:
+        range_desc = ""
+        if date_from_val:
+            range_desc += f"从 {date_from_val}"
+        if date_to_val:
+            range_desc += f" 到 {date_to_val}"
+        st.caption(f"📅 时间过滤：{range_desc.strip()}（过滤后实际数量可能少于设定值）")
+
     actual_count = st.session_state.count_input
     n_countries = len(st.session_state.selected_countries)
     n_platforms = len(st.session_state.selected_platforms)
@@ -989,9 +1019,11 @@ elif step == 4:
     countries_for_cache = st.session_state.get("selected_countries") or ["us"]
     platforms_for_cache = st.session_state.get("selected_platforms") or ["app_store"]
     count_for_cache = st.session_state.get("count", 200)  # 与 count_input 默认值一致
+    date_from_for_cache = st.session_state.get("date_from")
+    date_to_for_cache = st.session_state.get("date_to")
 
     if app_name_for_cache:
-        ck = _cache_key(app_name_for_cache, countries_for_cache, platforms_for_cache, count_for_cache)
+        ck = _cache_key(app_name_for_cache, countries_for_cache, platforms_for_cache, count_for_cache, date_from_for_cache, date_to_for_cache)
         cached = _load_cache(ck)
         if cached:
             st.session_state.report = cached.get("report", "")
@@ -1070,6 +1102,8 @@ elif step == 4:
                 countries=countries_for_cache,
                 count_per_platform=count_for_cache,
                 fetch_strategy=fetch_strategy,
+                date_from=st.session_state.get("date_from"),
+                date_to=st.session_state.get("date_to"),
             )
 
         task["pool"] = ThreadPoolExecutor(max_workers=1)
@@ -1132,7 +1166,7 @@ elif step == 4:
 
         # 保存到文件缓存（防 session 丢失）
         if app_name_for_cache:
-            ck = _cache_key(app_name_for_cache, countries_for_cache, platforms_for_cache, count_for_cache)
+            ck = _cache_key(app_name_for_cache, countries_for_cache, platforms_for_cache, count_for_cache, date_from_for_cache, date_to_for_cache)
             _save_cache(ck, {
                 "report": report,
                 "aggregated": agent.aggregated,

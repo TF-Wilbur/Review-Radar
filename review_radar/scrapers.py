@@ -200,11 +200,15 @@ def fetch_app_store_reviews(
     count: int = 200,
     sort: str = "mostrecent",
     on_progress: ProgressCallback = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[Review]:
-    """抓取 App Store 评论 — iTunes RSS JSON feed + 分页 + 重试"""
+    """抓取 App Store 评论 — iTunes RSS JSON feed + 分页 + 重试 + 日期过滤"""
     reviews = []
     page = 1
-    max_pages = (count // 50) + 2
+    # 有日期过滤时多抓几页，因为过滤后数量会减少
+    extra_pages = 5 if (date_from or date_to) else 0
+    max_pages = (count // 50) + 2 + extra_pages
     consecutive_failures = 0
 
     while len(reviews) < count and page <= max_pages:
@@ -250,6 +254,12 @@ def fetch_app_store_reviews(
             author = entry.get("author", {}).get("name", {}).get("label", "")
             date_str = entry.get("updated", {}).get("label", "")[:10]
 
+            # 日期过滤
+            if date_from and date_str < date_from:
+                continue
+            if date_to and date_str > date_to:
+                continue
+
             reviews.append(Review(
                 id=_make_review_id("app_store", content, date_str, author),
                 platform="app_store",
@@ -279,48 +289,74 @@ def fetch_google_play_reviews(
     lang: str = "",
     sort: str = "newest",
     on_progress: ProgressCallback = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[Review]:
-    """抓取 Google Play 评论 — 带重试"""
+    """抓取 Google Play 评论 — 带分页 + 重试 + 日期过滤"""
     if not lang:
         lang = COUNTRY_LANG.get(country, "en")
 
     sort_enum = Sort.MOST_RELEVANT if sort == "relevant" else Sort.NEWEST
 
     reviews = []
+    continuation_token = None
+    # 每页请求量：google_play_scraper 单次最多约 200 条
+    per_page = min(count, 200)
+    # 有日期过滤时多抓几页，因为过滤后数量会减少
+    extra_pages = 5 if (date_from or date_to) else 0
+    max_pages = max((count // per_page) + 2, 5) + extra_pages  # 安全上限防止死循环
+
     try:
-        def _do():
-            result, _ = gplay_reviews(
-                app_id, lang=lang, country=country,
-                sort=sort_enum, count=count,
-            )
-            return result
+        for page in range(max_pages):
+            if len(reviews) >= count:
+                break
 
-        result = _retry(_do)
+            def _do(token=continuation_token):
+                return gplay_reviews(
+                    app_id, lang=lang, country=country,
+                    sort=sort_enum, count=per_page,
+                    continuation_token=token,
+                )
 
-        for r in result:
-            content = (r.get("content") or "").strip()
-            if not content:
-                continue
-            date_val = r.get("at")
-            date_str = date_val.strftime("%Y-%m-%d") if isinstance(date_val, datetime) else str(date_val)[:10]
-            thumbs = str(r.get("thumbsUpCount", 0))
+            result, continuation_token = _retry(_do)
 
-            reviews.append(Review(
-                id=_make_review_id("google_play", content, date_str, thumbs),
-                platform="google_play",
-                rating=r.get("score", 0),
-                content=content,
-                date=date_str,
-                version=r.get("reviewCreatedVersion"),
-                thumbs_up=r.get("thumbsUpCount", 0),
-                country=country,
-                language=lang,
-            ))
+            if not result:
+                break
 
-        if on_progress:
-            on_progress(len(reviews), count, "google_play", country)
+            for r in result:
+                content = (r.get("content") or "").strip()
+                if not content:
+                    continue
+                date_val = r.get("at")
+                date_str = date_val.strftime("%Y-%m-%d") if isinstance(date_val, datetime) else str(date_val)[:10]
+                thumbs = str(r.get("thumbsUpCount", 0))
+
+                # 日期过滤
+                if date_from and date_str < date_from:
+                    continue
+                if date_to and date_str > date_to:
+                    continue
+
+                reviews.append(Review(
+                    id=_make_review_id("google_play", content, date_str, thumbs),
+                    platform="google_play",
+                    rating=r.get("score", 0),
+                    content=content,
+                    date=date_str,
+                    version=r.get("reviewCreatedVersion"),
+                    thumbs_up=r.get("thumbsUpCount", 0),
+                    country=country,
+                    language=lang,
+                ))
+
+            if on_progress:
+                on_progress(len(reviews), count, "google_play", country)
+
+            # 没有下一页了
+            if continuation_token is None:
+                break
 
     except Exception as e:
         logger.warning("Google Play 抓取失败（已重试）: %s", e)
 
-    return reviews
+    return reviews[:count]
