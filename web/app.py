@@ -1,4 +1,4 @@
-"""Review Radar — Streamlit Web UI v2（4 步引导交互）"""
+"""AppPulse — Streamlit Web UI v2（4 步引导交互）"""
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -53,37 +53,66 @@ def _load_cache(key: str) -> dict | None:
     return None
 
 # ── 页面配置 ──
-st.set_page_config(page_title="Review Radar", page_icon="📡", layout="centered")
+st.set_page_config(page_title="AppPulse", page_icon="📊", layout="centered")
 
-# ── Notion 风格 CSS ──
+# ── AppPulse 品牌 CSS ──
 st.markdown("""
 <style>
-    .stApp { background-color: #FFFFFF; color: #37352F; }
-    .main-title { font-size: 42px; font-weight: 700; color: #37352F; margin-bottom: 4px; letter-spacing: -0.5px; }
-    .sub-title { font-size: 18px; color: #787774; margin-bottom: 32px; font-weight: 400; }
-    .section-title { font-size: 24px; font-weight: 600; color: #37352F; margin-top: 36px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #E8E8E8; }
-    .step-title { font-size: 20px; font-weight: 600; color: #37352F; margin-bottom: 12px; }
-    .step-desc { font-size: 15px; color: #787774; margin-bottom: 20px; }
-    .metric-card { padding: 24px 0; text-align: center; }
-    .metric-value { font-size: 36px; font-weight: 700; color: #37352F; line-height: 1.2; }
-    .metric-label { font-size: 14px; color: #787774; margin-top: 4px; }
-    .app-card { display: flex; align-items: center; gap: 16px; padding: 20px; border: 1px solid #E8E8E8; border-radius: 8px; margin: 16px 0; }
+    .stApp { background-color: #FFFFFF; color: #1E1E2E; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+    .main-title {
+        font-size: 40px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 2px;
+        background: linear-gradient(135deg, #4F46E5, #7C3AED);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .sub-title { font-size: 16px; color: #6B7280; margin-bottom: 36px; font-weight: 400; letter-spacing: 0.3px; }
+    .section-title { font-size: 22px; font-weight: 700; color: #1E1E2E; margin-top: 40px; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 2px solid #E5E7EB; }
+    .step-title { font-size: 20px; font-weight: 700; color: #1E1E2E; margin-bottom: 10px; }
+    .step-desc { font-size: 14px; color: #6B7280; margin-bottom: 22px; line-height: 1.6; }
+    .metric-card { padding: 20px 16px; text-align: center; background: #F8F7FF; border-radius: 12px; border: 1px solid #E5E7EB; }
+    .metric-value { font-size: 32px; font-weight: 800; color: #4F46E5; line-height: 1.2; }
+    .metric-label { font-size: 13px; color: #6B7280; margin-top: 6px; font-weight: 500; }
+    .app-card {
+        display: flex; align-items: center; gap: 16px; padding: 20px 24px;
+        border: 1px solid #E5E7EB; border-radius: 12px; margin: 16px 0; background: #FFFFFF;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+        transition: box-shadow 0.2s ease;
+    }
+    .app-card:hover { box-shadow: 0 4px 12px rgba(79,70,229,0.08); }
     .app-icon { width: 64px; height: 64px; border-radius: 14px; }
     .app-info { flex: 1; }
-    .app-name { font-size: 20px; font-weight: 600; color: #37352F; }
-    .app-category { font-size: 14px; color: #787774; }
+    .app-name { font-size: 20px; font-weight: 700; color: #1E1E2E; }
+    .app-category { font-size: 14px; color: #6B7280; }
     .country-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-    .country-item { padding: 8px 12px; border-radius: 6px; font-size: 14px; }
-    .country-ok { background: #F0FFF0; color: #2E7D32; }
-    .country-no { background: #FFF0F0; color: #C62828; text-decoration: line-through; }
-    .phase-item { padding: 6px 0; font-size: 15px; color: #37352F; }
-    .phase-done { color: #787774; }
+    .country-item { padding: 8px 12px; font-size: 14px; }
+    .country-ok { background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; border-radius: 8px; }
+    .country-no { background: #FEF2F2; color: #991B1B; text-decoration: line-through; border: 1px solid #FECACA; border-radius: 8px; }
+    .phase-item { padding: 6px 0; font-size: 15px; color: #1E1E2E; }
+    .phase-done { color: #6B7280; }
     .phase-active { font-weight: 600; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     header [data-testid="stHeader"] {visibility: visible !important;}
     button[kind="header"] {visibility: visible !important;}
-    .stButton > button { background-color: #37352F; color: white; border: none; padding: 12px 32px; font-size: 16px; border-radius: 4px; font-weight: 500; }
-    .stButton > button:hover { background-color: #555555; }
+    .stButton > button {
+        background: linear-gradient(135deg, #4F46E5, #7C3AED); color: white;
+        border: none; padding: 10px 28px; font-size: 15px; border-radius: 8px; font-weight: 600;
+        transition: all 0.2s ease; box-shadow: 0 1px 3px rgba(79,70,229,0.3);
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #4338CA, #6D28D9);
+        box-shadow: 0 4px 12px rgba(79,70,229,0.35); transform: translateY(-1px);
+    }
+    .stButton > button:active { transform: translateY(0); }
+    section[data-testid="stSidebar"] { background-color: #FAFAFE; border-right: 1px solid #E5E7EB; }
+    section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 15px; font-weight: 700; color: #1E1E2E; letter-spacing: 0.02em; }
+    hr { border: none; border-top: 1px solid #E5E7EB; margin: 24px 0; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; font-weight: 600; font-size: 14px; }
+    .stDownloadButton > button {
+        background: #FFFFFF !important; color: #4F46E5 !important;
+        border: 1px solid #4F46E5 !important; border-radius: 8px; font-weight: 600;
+    }
+    .stDownloadButton > button:hover { background: #F8F7FF !important; }
+    .streamlit-expanderHeader { font-weight: 600; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -242,8 +271,8 @@ with st.sidebar:
         st.caption("暂无历史记录")
 
 # ── 标题 ──
-st.markdown('<div class="main-title">Review Radar</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">输入 App 名字，自动分析用户评论，生成洞察报告</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">AppPulse</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">感知每一条用户心声</div>', unsafe_allow_html=True)
 
 # ── 步骤指示器 ──
 step = st.session_state.step
@@ -251,11 +280,11 @@ steps = ["搜索 App", "选择市场与国家", "高级选项", "分析"]
 cols = st.columns(len(steps))
 for i, (col, label) in enumerate(zip(cols, steps), 1):
     if i < step:
-        col.markdown(f"<div style='text-align:center;color:#787774;'>✓ {label}</div>", unsafe_allow_html=True)
+        col.markdown(f"<div style='text-align:center;color:#10B981;font-weight:600;font-size:14px;'>✓ {label}</div>", unsafe_allow_html=True)
     elif i == step:
-        col.markdown(f"<div style='text-align:center;font-weight:600;color:#37352F;'>● {label}</div>", unsafe_allow_html=True)
+        col.markdown(f"<div style='text-align:center;font-weight:700;color:#4F46E5;font-size:14px;padding:4px 0;border-bottom:2px solid #4F46E5;'>● {label}</div>", unsafe_allow_html=True)
     else:
-        col.markdown(f"<div style='text-align:center;color:#CFCFCF;'>○ {label}</div>", unsafe_allow_html=True)
+        col.markdown(f"<div style='text-align:center;color:#D1D5DB;font-size:14px;'>○ {label}</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -265,7 +294,7 @@ st.markdown("---")
 # ════════════════════════════════════════════════════════════════
 def _render_sentiment_pie(sentiment: dict, title: str):
     """情感分布饼图"""
-    colors_map = {"positive": "#4285F4", "negative": "#EA8600", "neutral": "#9AA0A6"}
+    colors_map = {"positive": "#4F46E5", "negative": "#F59E0B", "neutral": "#D1D5DB"}
     labels_cn = {"positive": "正面", "negative": "负面", "neutral": "中性"}
     fig = go.Figure(data=[go.Pie(
         labels=[labels_cn.get(k, k) for k in sentiment.keys()],
@@ -274,7 +303,8 @@ def _render_sentiment_pie(sentiment: dict, title: str):
         hole=0.45, textinfo="label+percent", textfont=dict(size=14),
     )])
     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), height=280,
-                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -283,18 +313,19 @@ def _render_category_bar(categories: dict, title: str):
     sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
     fig2 = go.Figure(data=[go.Bar(
         x=[c[1] for c in sorted_cats], y=[c[0] for c in sorted_cats],
-        orientation='h', marker_color="#37352F",
+        orientation='h', marker_color="#4F46E5",
     )])
     fig2.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, autorange="reversed"))
+                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, autorange="reversed"),
+                       font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
     st.plotly_chart(fig2, use_container_width=True)
 
 
 def _render_rating_dist(rating_dist: dict, title: str):
     """评分分布柱状图"""
     stars = sorted(rating_dist.keys(), key=lambda x: int(x))
-    colors_rating = {1: "#D93025", 2: "#EA8600", 3: "#F9AB00", 4: "#5BB974", 5: "#4285F4"}
+    colors_rating = {1: "#EF4444", 2: "#F59E0B", 3: "#FBBF24", 4: "#34D399", 5: "#4F46E5"}
     fig3 = go.Figure(data=[go.Bar(
         x=[f"{s} 星" for s in stars],
         y=[rating_dist[s] for s in stars],
@@ -304,7 +335,8 @@ def _render_rating_dist(rating_dist: dict, title: str):
     )])
     fig3.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
+                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False),
+                       font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
     st.plotly_chart(fig3, use_container_width=True)
 
 
@@ -332,14 +364,15 @@ def _render_version_trend(version_trends: dict, title: str):
         textposition="top center",
         marker=dict(
             size=[max(8, min(30, vt[v]["review_count"])) for v in sorted_versions],
-            color="#37352F",
+            color="#4F46E5",
         ),
-        line=dict(color="#37352F", width=2),
+        line=dict(color="#4F46E5", width=2),
     ))
     fig4.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                        xaxis=dict(showgrid=False, title="版本"),
-                       yaxis=dict(showgrid=True, title="平均评分", range=[0.5, 5.5]))
+                       yaxis=dict(showgrid=True, title="平均评分", range=[0.5, 5.5]),
+                       font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
     st.plotly_chart(fig4, use_container_width=True)
 
 
@@ -373,21 +406,22 @@ def _render_time_trend(analyzed_reviews: list[dict], title: str):
     fig_time = go.Figure()
     fig_time.add_trace(go.Scatter(
         x=sorted_weeks, y=[weekly[w]["positive"] for w in sorted_weeks],
-        name="正面", mode="lines", line=dict(color="#4285F4", width=2), stackgroup="one",
+        name="正面", mode="lines", line=dict(color="#4F46E5", width=2), stackgroup="one",
     ))
     fig_time.add_trace(go.Scatter(
         x=sorted_weeks, y=[weekly[w]["neutral"] for w in sorted_weeks],
-        name="中性", mode="lines", line=dict(color="#9AA0A6", width=2), stackgroup="one",
+        name="中性", mode="lines", line=dict(color="#D1D5DB", width=2), stackgroup="one",
     ))
     fig_time.add_trace(go.Scatter(
         x=sorted_weeks, y=[weekly[w]["negative"] for w in sorted_weeks],
-        name="负面", mode="lines", line=dict(color="#EA8600", width=2), stackgroup="one",
+        name="负面", mode="lines", line=dict(color="#F59E0B", width=2), stackgroup="one",
     ))
     fig_time.update_layout(
         margin=dict(t=20, b=20, l=20, r=20), height=280,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, title="评论数"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"),
     )
     st.plotly_chart(fig_time, use_container_width=True)
 
@@ -627,7 +661,7 @@ def _show_results():
 
             st.markdown(
                 f'{plat_label} {stars} {sent_emoji} '
-                f'<span style="color:#787774;font-size:12px;">v{html_mod.escape(str(version))} | {html_mod.escape(date)} | {html_mod.escape(category)}</span>\n\n'
+                f'<span style="color:#6B7280;font-size:12px;">v{html_mod.escape(str(version))} | {html_mod.escape(date)} | {html_mod.escape(category)}</span>\n\n'
                 f'> {html_mod.escape(content)}',
                 unsafe_allow_html=True,
             )
@@ -751,7 +785,7 @@ if step == 1:
             <div class="app-info">
                 <div class="app-name">{html_mod.escape(name)}</div>
                 <div class="app-category">{html_mod.escape(category)}</div>
-                <div style="font-size:13px;color:#787774;margin-top:4px;">
+                <div style="font-size:13px;color:#6B7280;margin-top:4px;">
                     {"✅ App Store" if ios_result else "❌ App Store"}
                     &nbsp;|&nbsp;
                     {"✅ Google Play" if gplay_result else "❌ Google Play"}

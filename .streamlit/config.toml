@@ -11,7 +11,8 @@ maxMessageSize = 200
 gatherUsageStats = false
 
 [theme]
-primaryColor = "#37352F"
+primaryColor = "#4F46E5"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F7F6F3"
-textColor = "#37352F"
+secondaryBackgroundColor = "#F8F7FF"
+textColor = "#1E1E2E"
+font = "sans serif"
