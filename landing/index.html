@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AppPulse — 感知每一条用户心声</title>
+<meta name="description" content="输入 App 名字，自动抓取全球 App Store & Google Play 评论，AI 多维分析，生成可视化洞察报告">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#09090b;--bg-card:rgba(255,255,255,0.03);--bg-card-hover:rgba(255,255,255,0.06);
+  --border:rgba(255,255,255,0.06);--border-hover:rgba(255,255,255,0.12);
+  --text:#f4f4f5;--text-secondary:#a1a1aa;--text-dim:#71717a;
+  --accent:#818cf8;--accent2:#a78bfa;--gradient:linear-gradient(135deg,#4f46e5,#7c3aed);
+  --glow1:rgba(79,70,229,0.15);--glow2:rgba(124,58,237,0.1);
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Nav ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;backdrop-filter:blur(12px);background:rgba(9,9,11,0.8);border-bottom:1px solid var(--border);transition:all .3s}
+.nav-inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:20px;font-weight:700;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-links{display:flex;gap:32px;align-items:center}
+.nav-links a{color:var(--text-secondary);font-size:14px;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;background:var(--gradient);color:#fff;font-size:14px;font-weight:600;border-radius:8px;border:none;cursor:pointer;transition:all .3s;box-shadow:0 0 20px var(--glow1)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 0 30px var(--glow1),0 0 60px var(--glow2)}
+.btn-outline{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;background:transparent;color:var(--text-secondary);font-size:14px;font-weight:500;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:all .3s}
+.btn-outline:hover{border-color:var(--border-hover);color:var(--text);background:var(--bg-card)}
+
+/* ── Sections ── */
+section{position:relative;padding:120px 24px}
+.container{max-width:1200px;margin:0 auto}
+.section-label{display:inline-block;font-size:13px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:2px;margin-bottom:16px}
+.section-title{font-size:clamp(32px,5vw,48px);font-weight:800;line-height:1.1;margin-bottom:16px;letter-spacing:-0.02em}
+.section-desc{font-size:18px;color:var(--text-secondary);max-width:600px;line-height:1.7}
+
+/* ── Hero ── */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding-top:80px;position:relative;overflow:hidden}
+.hero-glow{position:absolute;width:800px;height:800px;border-radius:50%;filter:blur(120px);opacity:.4;pointer-events:none}
+.hero-glow-1{top:-200px;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(79,70,229,0.3),transparent 70%)}
+.hero-glow-2{bottom:-300px;right:-200px;background:radial-gradient(circle,rgba(124,58,237,0.2),transparent 70%)}
+.hero-content{position:relative;z-index:1;max-width:800px}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:100px;font-size:13px;color:var(--text-secondary);margin-bottom:32px}
+.hero-badge span{color:var(--accent)}
+.hero h1{font-size:clamp(40px,7vw,72px);font-weight:800;line-height:1.05;letter-spacing:-0.03em;margin-bottom:24px}
+.hero h1 .gradient-text{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:20px;color:var(--text-secondary);max-width:560px;margin:0 auto 40px;line-height:1.7}
+.hero-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.hero-visual{margin-top:80px;position:relative}
+.hero-visual img{width:100%;max-width:900px;border-radius:12px;border:1px solid var(--border);box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+
+/* ── Grid noise overlay ── */
+.noise{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ── Features ── */
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:48px}
+.feature-card{background:var(--bg);padding:40px 32px;transition:background .3s}
+.feature-card:hover{background:var(--bg-card-hover)}
+.feature-icon{width:48px;height:48px;border-radius:12px;background:var(--bg-card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:20px;color:var(--accent)}
+.feature-card h3{font-size:18px;font-weight:700;margin-bottom:8px;letter-spacing:-0.01em}
+.feature-card p{font-size:14px;color:var(--text-secondary);line-height:1.7}
+
+/* ── How it works ── */
+.steps{display:flex;gap:0;margin-top:64px;position:relative}
+.steps::before{content:'';position:absolute;top:36px;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent)}
+.step{flex:1;text-align:center;position:relative;padding:0 16px}
+.step-num{width:72px;height:72px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-size:24px;font-weight:800;color:var(--accent);position:relative;z-index:1}
+.step h3{font-size:18px;font-weight:700;margin-bottom:8px}
+.step p{font-size:14px;color:var(--text-secondary);line-height:1.6}
+
+/* ── Demo ── */
+.demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:48px;align-items:start}
+.demo-stats{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;transition:all .3s}
+.stat-card:hover{border-color:var(--border-hover);background:var(--bg-card-hover)}
+.stat-value{font-size:32px;font-weight:800;margin-bottom:4px}
+.stat-value.negative{color:#f87171}
+.stat-value.positive{color:#34d399}
+.stat-value.accent{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-label{font-size:13px;color:var(--text-dim);font-weight:500}
+.demo-table{width:100%;border-collapse:collapse;margin-top:24px}
+.demo-table th{text-align:left;font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:1px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.demo-table td{font-size:14px;padding:12px 16px;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+.demo-table tr:hover td{color:var(--text);background:var(--bg-card)}
+.demo-right h3{font-size:22px;font-weight:700;margin-bottom:16px}
+.pain-item{display:flex;gap:12px;padding:16px;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;background:var(--bg-card);transition:all .3s}
+.pain-item:hover{border-color:var(--border-hover);background:var(--bg-card-hover)}
+.pain-rank{width:28px;height:28px;border-radius:6px;background:var(--gradient);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.pain-content h4{font-size:15px;font-weight:600;margin-bottom:4px}
+.pain-content p{font-size:13px;color:var(--text-dim);line-height:1.5}
+
+/* ── Tech ── */
+.tech-flow{display:flex;align-items:center;justify-content:center;gap:0;margin-top:64px;flex-wrap:wrap}
+.tech-node{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px 28px;text-align:center;transition:all .3s}
+.tech-node:hover{border-color:var(--accent);box-shadow:0 0 20px var(--glow1)}
+.tech-node h4{font-size:15px;font-weight:700;margin-bottom:4px}
+.tech-node p{font-size:12px;color:var(--text-dim)}
+.tech-arrow{color:var(--text-dim);font-size:24px;padding:0 8px}
+
+/* ── CTA ── */
+.cta{text-align:center;position:relative;overflow:hidden}
+.cta-glow{position:absolute;width:600px;height:600px;border-radius:50%;filter:blur(100px);opacity:.3;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(79,70,229,0.3),transparent 70%)}
+.cta-content{position:relative;z-index:1}
+.cta h2{font-size:clamp(32px,5vw,56px);font-weight:800;letter-spacing:-0.03em;margin-bottom:16px}
+.cta p{font-size:18px;color:var(--text-secondary);margin-bottom:40px}
+
+/* ── Footer ── */
+footer{border-top:1px solid var(--border);padding:40px 24px;text-align:center}
+footer p{font-size:13px;color:var(--text-dim)}
+footer a{color:var(--text-secondary)}
+footer a:hover{color:var(--text)}
+
+/* ── Animations ── */
+.fade-in{opacity:0;transform:translateY(30px);transition:opacity .6s ease,transform .6s ease}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .nav-links a:not(.btn-primary){display:none}
+  .features-grid{grid-template-columns:1fr}
+  .steps{flex-direction:column;gap:32px}
+  .steps::before{display:none}
+  .demo-grid{grid-template-columns:1fr}
+  .tech-flow{flex-direction:column}
+  .tech-arrow{transform:rotate(90deg)}
+}
+</style>
+</head>
+<body>
+<div class="noise"></div>
+
+<!-- Nav -->
+<nav>
+  <div class="nav-inner">
+    <div class="logo">AppPulse</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#demo">Demo</a>
+      <a href="/app" class="btn-primary">Start Analyzing</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-glow hero-glow-1"></div>
+  <div class="hero-glow hero-glow-2"></div>
+  <div class="hero-content">
+    <div class="hero-badge">Powered by AI <span>&#x2022; Open Source</span></div>
+    <h1>
+      <span class="gradient-text">感知每一条</span><br>用户心声
+    </h1>
+    <p>输入 App 名字，自动抓取全球用户评论，AI 深度分析情感、痛点与趋势，生成专业洞察报告。</p>
+    <div class="hero-buttons">
+      <a href="/app" class="btn-primary">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        立即体验
+      </a>
+      <a href="https://github.com/TF-Wilbur/AppPulse" target="_blank" class="btn-outline">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title fade-in">一站式评论洞察</h2>
+    <p class="section-desc fade-in">从抓取到分析到报告，全流程自动化。不只是数据，更是可执行的产品决策。</p>
+    <div class="features-grid fade-in">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+        </div>
+        <h3>智能搜索匹配</h3>
+        <p>输入"ins"也能找到 Instagram。iTunes API 模糊匹配 + Google Play 交叉验证，双平台精准关联。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5a17.92 17.92 0 01-8.716-2.247m0 0A9 9 0 013 12c0-1.47.353-2.856.978-4.082"/></svg>
+        </div>
+        <h3>全球多国覆盖</h3>
+        <p>支持美国、日本、中国、英国、德国等 10+ 国家，自动检测可用性，多国并发抓取。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>
+        </div>
+        <h3>AI 深度分析</h3>
+        <p>情感分析、痛点提取、功能归因、关键词去重、评分一致性检测，多维度交叉洞察。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        </div>
+        <h3>质量自评估</h3>
+        <p>Agent 自动评估分析质量，覆盖率不足或一致性异常时自动改进，最多 3 轮迭代。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+        </div>
+        <h3>可视化仪表盘</h3>
+        <p>6 种交互图表 + 评论浏览器 + 多国家 Tab 切换，数据一目了然。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+        </div>
+        <h3>专业报告输出</h3>
+        <p>Markdown + HTML 双格式，P0/P1/P2 量化行动建议，引用真实评论作为论据。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title fade-in">四步完成分析</h2>
+    <p class="section-desc fade-in">从输入到报告，全程自动化，无需任何配置。</p>
+    <div class="steps fade-in">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>输入 App 名字</h3>
+        <p>支持模糊搜索，输入缩写或拼音也能精准匹配</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>选择国家和平台</h3>
+        <p>自动检测各国上架状态，勾选目标市场即可</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>AI 自动分析</h3>
+        <p>并发抓取 + 分批分析 + 质量自评估，全程无需干预</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h3>获取洞察报告</h3>
+        <p>可视化仪表盘 + Markdown/HTML 报告，一键下载</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Demo -->
+<section id="demo">
+  <div class="container">
+    <div class="section-label">Real Case</div>
+    <h2 class="section-title fade-in">Instagram 洞察报告</h2>
+    <p class="section-desc fade-in">以下是 AppPulse 对 Instagram 的真实分析结果，基于 220 条用户评论。</p>
+    <div class="demo-grid fade-in">
+      <div class="demo-left">
+        <div class="demo-stats">
+          <div class="stat-card">
+            <div class="stat-value accent">220</div>
+            <div class="stat-label">评论总数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value negative">64.3%</div>
+            <div class="stat-label">负面情感占比</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value positive">7.1%</div>
+            <div class="stat-label">正面情感占比</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="color:var(--accent2)">14</div>
+            <div class="stat-label">有效分析样本</div>
+          </div>
+        </div>
+        <table class="demo-table" style="margin-top:32px">
+          <thead><tr><th>关键词</th><th>频次</th><th>情感</th></tr></thead>
+          <tbody>
+            <tr><td>chronological order</td><td>3</td><td style="color:#f87171">负面</td></tr>
+            <tr><td>crashing</td><td>3</td><td style="color:#f87171">负面</td></tr>
+            <tr><td>too many ads</td><td>2</td><td style="color:#f87171">负面</td></tr>
+            <tr><td>customer service</td><td>2</td><td style="color:#f87171">负面</td></tr>
+            <tr><td>unnecessary updates</td><td>2</td><td style="color:#f87171">负面</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="demo-right">
+        <h3>Top 5 痛点</h3>
+        <div class="pain-item">
+          <div class="pain-rank">1</div>
+          <div class="pain-content">
+            <h4>账号安全与申诉机制</h4>
+            <p>账号被误判违规并终止、疑似被黑客入侵、客服不回应</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-rank">2</div>
+          <div class="pain-content">
+            <h4>内容审核公平性</h4>
+            <p>举报 NSFW 内容无效反被封号、等待恢复 5 个月无果</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-rank">3</div>
+          <div class="pain-content">
+            <h4>广告控制与排序选择权</h4>
+            <p>广告过多（每 5 帖一个）、Feed 不按时间顺序</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-rank">4</div>
+          <div class="pain-content">
+            <h4>内容分发公平性</h4>
+            <p>算法改动导致大账号主导 Feed、普通用户内容被淹没</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-rank">5</div>
+          <div class="pain-content">
+            <h4>功能完整性与客服效率</h4>
+            <p>音乐功能在商业账号不可用、Stories 崩溃、客服响应差</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tech -->
+<section id="tech">
+  <div class="container" style="text-align:center">
+    <div class="section-label">Architecture</div>
+    <h2 class="section-title fade-in" style="margin:0 auto 16px">Orchestrator Agent 架构</h2>
+    <p class="section-desc fade-in" style="margin:0 auto 0">代码控制流程编排，LLM 负责分析和生成。支持 MiniMax、OpenAI、DeepSeek 等任何 OpenAI 兼容接口。</p>
+    <div class="tech-flow fade-in">
+      <div class="tech-node"><h4>iTunes API</h4><p>App Store 搜索</p></div>
+      <div class="tech-arrow">&rarr;</div>
+      <div class="tech-node"><h4>Google Play</h4><p>交叉验证</p></div>
+      <div class="tech-arrow">&rarr;</div>
+      <div class="tech-node"><h4>并发抓取</h4><p>多国 &times; 多平台</p></div>
+      <div class="tech-arrow">&rarr;</div>
+      <div class="tech-node"><h4>AI 分析</h4><p>50 条/批并发</p></div>
+      <div class="tech-arrow">&rarr;</div>
+      <div class="tech-node"><h4>质量评估</h4><p>自动改进 &times;3</p></div>
+      <div class="tech-arrow">&rarr;</div>
+      <div class="tech-node"><h4>报告生成</h4><p>MD + HTML</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <div class="cta-glow"></div>
+  <div class="cta-content">
+    <h2 class="fade-in">开始你的第一份<br><span class="gradient-text">评论洞察报告</span></h2>
+    <p class="fade-in">免费、开源、无需注册。只需一个 App 名字。</p>
+    <div class="hero-buttons fade-in" style="justify-content:center">
+      <a href="/app" class="btn-primary" style="padding:14px 36px;font-size:16px">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        立即体验
+      </a>
+      <a href="https://github.com/TF-Wilbur/AppPulse" target="_blank" class="btn-outline" style="padding:14px 36px;font-size:16px">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>AppPulse &copy; 2026 &mdash; Open Source under <a href="https://github.com/TF-Wilbur/AppPulse/blob/main/LICENSE" target="_blank">MIT License</a></p>
+</footer>
+
+<!-- Scroll animations -->
+<script>
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
