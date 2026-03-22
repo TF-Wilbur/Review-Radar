@@ -29,6 +29,7 @@ MIN_REVIEW_LENGTH: int = int(os.environ.get("MIN_REVIEW_LENGTH", "5"))
 PAGE_SIZE: int = int(os.environ.get("PAGE_SIZE", "20"))
 CACHE_TTL: int = int(os.environ.get("CACHE_TTL", "86400"))  # 24 小时
 CACHE_DIR: Path = Path(os.environ.get("CACHE_DIR", "")) if os.environ.get("CACHE_DIR") else None  # None 表示用 tempfile
+DAILY_ANALYSIS_LIMIT: int = int(os.environ.get("DAILY_ANALYSIS_LIMIT", "99"))  # 每日分析次数上限
 
 # ── 报告配置 ──
 REPORT_OUTPUT_DIR: str = os.environ.get("REPORT_OUTPUT_DIR", "reports")

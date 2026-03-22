@@ -23,8 +23,52 @@ from review_radar.history import save_analysis, list_analyses, get_analysis, del
 
 # ── 文件缓存（防 session 丢失）──
 from review_radar.config import CACHE_TTL, CACHE_DIR as _CACHE_DIR_CFG
+from review_radar.config import DAILY_ANALYSIS_LIMIT
 CACHE_DIR = _CACHE_DIR_CFG or Path(tempfile.gettempdir()) / "review_radar_cache"
 CACHE_DIR.mkdir(exist_ok=True)
+
+
+# ── 每日分析配额管理 ──
+_QUOTA_FILE = Path(tempfile.gettempdir()) / "review_radar_daily_quota.json"
+_QUOTA_LOCK = __import__("threading").Lock()
+
+
+def _get_today() -> str:
+    return datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+
+
+def _read_quota() -> dict:
+    """读取当日配额状态，自动跨天重置"""
+    today = _get_today()
+    try:
+        if _QUOTA_FILE.exists():
+            data = json.loads(_QUOTA_FILE.read_text(encoding="utf-8"))
+            if data.get("date") == today:
+                return data
+    except Exception:
+        pass
+    return {"date": today, "used": 0}
+
+
+def _increment_quota() -> tuple[bool, int]:
+    """尝试消耗一次配额，返回 (是否成功, 剩余次数)"""
+    with _QUOTA_LOCK:
+        data = _read_quota()
+        remaining = DAILY_ANALYSIS_LIMIT - data["used"]
+        if remaining <= 0:
+            return False, 0
+        data["used"] += 1
+        try:
+            _QUOTA_FILE.write_text(json.dumps(data), encoding="utf-8")
+        except Exception:
+            pass
+        return True, DAILY_ANALYSIS_LIMIT - data["used"]
+
+
+def _get_remaining_quota() -> int:
+    """获取今日剩余配额"""
+    data = _read_quota()
+    return max(DAILY_ANALYSIS_LIMIT - data["used"], 0)
 
 
 def _cache_key(app_name: str, countries: list, platforms: list, count: int,
@@ -284,6 +328,22 @@ with st.sidebar:
 # ── 标题 ──
 st.markdown('<div class="main-title">AppPulse</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">感知每一条用户心声</div>', unsafe_allow_html=True)
+
+# ── 每日配额提示 ──
+_remaining = _get_remaining_quota()
+if _remaining > 0:
+    _quota_color = "#10B981" if _remaining > 20 else "#F59E0B"
+    st.markdown(
+        f'<div style="text-align:center;font-size:13px;color:{_quota_color};margin-bottom:8px;">'
+        f'今日剩余体验次数：<b>{_remaining}</b> / {DAILY_ANALYSIS_LIMIT}</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div style="text-align:center;font-size:13px;color:#EF4444;margin-bottom:8px;">'
+        '今日体验名额已用完，明天再来吧 🙏</div>',
+        unsafe_allow_html=True,
+    )
 
 # ── 步骤指示器 ──
 step = st.session_state.step
@@ -996,10 +1056,14 @@ elif step == 3:
             col_yes, col_no = st.columns(2)
             with col_yes:
                 if st.button("确认开始", use_container_width=True, type="primary"):
-                    st.session_state.count = actual_count
-                    st.session_state.confirm_start = False
-                    st.session_state.step = 4
-                    st.rerun()
+                    ok, remaining = _increment_quota()
+                    if not ok:
+                        st.error("今日体验名额已用完（每日限 {} 次），明天再来吧 🙏".format(DAILY_ANALYSIS_LIMIT))
+                    else:
+                        st.session_state.count = actual_count
+                        st.session_state.confirm_start = False
+                        st.session_state.step = 4
+                        st.rerun()
             with col_no:
                 if st.button("取消", use_container_width=True):
                     st.session_state.confirm_start = False
