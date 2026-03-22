@@ -1,6 +1,6 @@
-# Review Radar
+# AppPulse
 
-App 用户评论洞察 Agent — 输入 App 名字，自动抓取 App Store & Google Play 评论，多维度 AI 分析，生成可视化洞察报告。
+感知每一条用户心声 — 输入 App 名字，自动抓取 App Store & Google Play 评论，多维度 AI 分析，生成可视化洞察报告。
 
 ## 功能特性
 
@@ -17,7 +17,7 @@ App 用户评论洞察 Agent — 输入 App 名字，自动抓取 App Store & Go
 - 痛点提取 + 严重程度评估
 - 功能归因（将评论关联到具体功能模块）
 - 评分与情感一致性检测（识别刷好评/误操作）
-- 关键词提取 + 用户场景识别
+- 关键词提取 + 语义去重（跨语言同义词合并）
 - 分析质量自评估 + 自动改进
 
 **可视化仪表盘（Streamlit Web UI）**
@@ -32,13 +32,13 @@ App 用户评论洞察 Agent — 输入 App 名字，自动抓取 App Store & Go
 
 **报告生成**
 - 执行摘要 + 分国家深度分析 + 跨国对比 + 行动建议
-- Markdown 格式，支持下载
+- Markdown + HTML 双格式下载
 - 引用真实评论原文作为论据
 - P0/P1/P2 三级优先级行动建议，含量化评分
 
 **持久化**
-- 分析历史存储在 GCS，按 API Key 隔离
-- 刷新页面、容器重启不丢失历史记录
+- 支持本地 SQLite（默认）和 GCS 双存储后端
+- 分析历史按 API Key 隔离，支持搜索和删除
 - 本地文件缓存防止 session 断连丢失分析结果
 
 ## 技术架构
@@ -56,15 +56,17 @@ Phase 2.5: 功能级满意度分析
     ↓
 Phase 3: 质量评估 + 自动改进（最多 3 轮）
     ↓
+Phase 3.5: 语义去重（跨语言同义词合并）
+    ↓
 Phase 4: 分章节生成报告
     ↓
-可视化仪表盘 / Markdown 报告
+可视化仪表盘 / Markdown + HTML 报告
 ```
 
 - **Orchestrator 模式**：代码控制流程编排，LLM 负责分析和生成
 - **多 LLM 提供商**：支持 OpenAI 兼容接口（MiniMax、OpenAI、DeepSeek 等），Web UI 可动态切换
 - **并发优化**：多国家抓取 + 多批次分析均使用 ThreadPoolExecutor 并发
-- **GCS 持久化**：分析历史按用户（API Key 哈希）存储在 Google Cloud Storage
+- **双存储后端**：本地 SQLite（默认）或 GCS，按用户隔离历史记录
 
 ## 快速开始
 
@@ -105,10 +107,10 @@ streamlit run web/app.py
 
 ```bash
 # 基础用法
-review-radar "TikTok"
+apppulse "TikTok"
 
 # 多国家 + 指定平台
-review-radar "微信" --countries us,cn,jp --platforms app_store,google_play --count 200
+apppulse "微信" --countries us,cn,jp --platforms app_store,google_play --count 200
 ```
 
 CLI 参数：
@@ -124,14 +126,14 @@ CLI 参数：
 ### 4. Docker
 
 ```bash
-docker build -t review-radar .
-docker run -p 8080:8080 --env-file .env review-radar
+docker build -t apppulse .
+docker run -p 8080:8080 --env-file .env apppulse
 ```
 
 ### 5. Cloud Run 部署
 
 ```bash
-gcloud run deploy review-radar \
+gcloud run deploy apppulse \
   --source . \
   --region asia-east1 \
   --allow-unauthenticated \
@@ -152,9 +154,9 @@ review-radar/
 │   ├── providers.py    # 多 LLM 提供商支持
 │   ├── models.py       # 数据模型
 │   ├── availability.py # 国家可用性检测
-│   ├── history.py      # 分析历史（GCS 持久化）
+│   ├── history.py      # 分析历史（SQLite / GCS 双后端）
 │   ├── config.py       # 配置常量
-│   ├── report.py       # 报告保存
+│   ├── report.py       # 报告保存 + HTML 导出
 │   └── cli.py          # CLI 入口 + Rich 终端 UI
 ├── web/
 │   └── app.py          # Streamlit Web UI

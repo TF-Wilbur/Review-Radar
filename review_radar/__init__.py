@@ -1,4 +1,4 @@
-"""Review Radar - App 用户评论洞察 Agent"""
+"""AppPulse - 感知每一条用户心声"""
 
 import logging
 

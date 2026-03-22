@@ -45,8 +45,8 @@ def make_event_handler():
         if event_type == "agent_start":
             console.print()
             console.print(Panel.fit(
-                f"[bold white]Review Radar[/bold white]\n"
-                f"[dim]App 用户评论洞察 Agent[/dim]\n\n"
+                f"[bold white]AppPulse[/bold white]\n"
+                f"[dim]感知每一条用户心声[/dim]\n\n"
                 f"目标: [bold cyan]{data.get('app_name')}[/bold cyan]",
                 border_style="blue",
                 padding=(1, 3),
@@ -119,7 +119,7 @@ def main():
     import review_radar.config  # noqa: F401 — 确保 load_dotenv 被调用
 
     parser = argparse.ArgumentParser(
-        description="Review Radar — App 用户评论洞察 Agent",
+        description="AppPulse — 感知每一条用户心声",
     )
     parser.add_argument("app_name", help="App 名字，如'微信'、'飞书'、'Notion'")
     parser.add_argument("--count", type=int, default=100, help="每平台每国家的评论数量（默认 100）")
