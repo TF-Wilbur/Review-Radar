@@ -104,6 +104,14 @@ st.markdown("""
     .stButton > button:active { transform: translateY(0); }
     section[data-testid="stSidebar"] { background-color: #FAFAFE; border-right: 1px solid #E5E7EB; }
     section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 15px; font-weight: 700; color: #1E1E2E; letter-spacing: 0.02em; }
+    section[data-testid="stSidebar"] .stButton > button {
+        background: #FFFFFF !important; color: #4F46E5 !important;
+        border: 1px solid #4F46E5 !important; box-shadow: none;
+        font-size: 13px; padding: 6px 12px;
+    }
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #F8F7FF !important; transform: none; box-shadow: none;
+    }
     hr { border: none; border-top: 1px solid #E5E7EB; margin: 24px 0; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; font-weight: 600; font-size: 14px; }
