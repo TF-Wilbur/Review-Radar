@@ -8,7 +8,7 @@ import os
 import html as html_mod
 import hashlib
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import review_radar.config  # noqa: F401 — 确保 load_dotenv 被调用
@@ -217,7 +217,7 @@ with st.sidebar:
         history = []
     if history:
         for h in history:
-            ts = datetime.fromtimestamp(h["timestamp"]).strftime("%m-%d %H:%M")
+            ts = datetime.fromtimestamp(h["timestamp"], tz=timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
             label = f'{h["app_name"]} ({ts}, {h["review_count"]} 条)'
             if st.button(label, key=f"hist_{h['id']}"):
                 record = get_analysis(user_hash=uh, analysis_id=h["id"])
