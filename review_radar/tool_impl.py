@@ -1,6 +1,7 @@
 """5 个 Tool 的具体实现"""
 
 import json
+import logging
 import re
 from datetime import datetime
 
@@ -18,6 +19,8 @@ from review_radar.prompts import (
 )
 from review_radar.llm import chat_simple
 from review_radar.availability import COUNTRIES
+
+logger = logging.getLogger("review_radar.tool_impl")
 
 
 def _extract_json(text: str) -> dict | None:
@@ -105,14 +108,14 @@ def tool_fetch_reviews(
             ios_reviews = fetch_app_store_reviews(app_store_id, country, count)
             reviews.extend(ios_reviews)
         except Exception as e:
-            print(f"[fetch_reviews] App Store 抓取失败: {e}")
+            logger.warning("App Store 抓取失败: %s", e)
 
     if use_gplay:
         try:
             gplay_reviews = fetch_google_play_reviews(google_play_id, count, country)
             reviews.extend(gplay_reviews)
         except Exception as e:
-            print(f"[fetch_reviews] Google Play 抓取失败: {e}")
+            logger.warning("Google Play 抓取失败: %s", e)
 
     # 按日期倒序
     reviews.sort(key=lambda x: x.date, reverse=True)
@@ -159,11 +162,11 @@ def tool_analyze_batch(batch_index: int, reviews: list[dict], strategy_hint: str
     text = chat_simple(prompt, max_tokens=8000)
     result = _extract_json(text)
 
-    # JSON 解析失败时，用更简单的 Prompt 重试一次
+    # JSON 解析失败时，用精简指令重试一次
     if result is None:
         retry_prompt = (
-            "你上一次的回复格式不正确，无法解析为 JSON。请只返回 JSON，不要任何解释文字。\n\n"
-            f"原始请求：\n{prompt}"
+            "你上一次的回复格式不正确，无法解析为 JSON。"
+            "请只返回纯 JSON，不要任何解释文字、不要 markdown 代码块。"
         )
         text = chat_simple(retry_prompt, max_tokens=8000)
         result = _extract_json(text)
@@ -206,12 +209,12 @@ def tool_evaluate_coverage(
 
     if result is None:
         return {
-            "is_complete": True,
+            "is_complete": False,
             "coverage_score": total_analyzed / max(total_reviews, 1),
             "issues": [],
             "improvement_actions": [],
             "strategy_adjustments": [],
-            "message": "评估结果解析失败，默认通过",
+            "message": "评估结果解析失败，跳过本轮评估",
         }
 
     result["message"] = (
@@ -292,6 +295,12 @@ def tool_generate_report(
         return {"error": f"未知的 report_step: {report_step}"}
 
 
+def _llm_chapter(prompt: str, message: str, max_tokens: int = 3000, key: str = "chapter_content") -> dict:
+    """通用的 LLM 章节生成辅助函数"""
+    text = chat_simple(prompt, max_tokens=max_tokens)
+    return {key: text, "message": message}
+
+
 def _generate_executive_summary(app_name, data, countries, platforms, current_date):
     global_data = data.get("global", {})
     summary_data = {
@@ -308,8 +317,7 @@ def _generate_executive_summary(app_name, data, countries, platforms, current_da
         current_date=current_date,
         global_summary=json.dumps(summary_data, ensure_ascii=False, indent=2),
     )
-    text = chat_simple(prompt, max_tokens=500)
-    return {"chapter_content": text, "message": "执行摘要生成完成"}
+    return _llm_chapter(prompt, "执行摘要生成完成", max_tokens=500)
 
 
 def _generate_outline(app_name, data, countries, platforms, current_date):
@@ -365,8 +373,7 @@ def _generate_overview(app_name, data, countries, platforms, current_date):
         global_data=json.dumps(data.get("global", {}), ensure_ascii=False, indent=2)[:4000],
         country_summaries=country_summaries[:6000],
     )
-    text = chat_simple(prompt, max_tokens=3000)
-    return {"chapter_content": text, "message": "总览章节生成完成"}
+    return _llm_chapter(prompt, "总览章节生成完成")
 
 
 def _generate_country_chapter(app_name, data, country_code, platforms, current_date, outline, sample_reviews):
@@ -417,8 +424,7 @@ def _generate_cross_country(app_name, data, countries, current_date):
         countries_desc=countries_desc,
         all_country_data=all_country_data[:8000],
     )
-    text = chat_simple(prompt, max_tokens=3000)
-    return {"chapter_content": text, "message": "跨国对比章节生成完成"}
+    return _llm_chapter(prompt, "跨国对比章节生成完成")
 
 
 def _generate_action(app_name, data, countries, current_date):
@@ -436,8 +442,7 @@ def _generate_action(app_name, data, countries, current_date):
         global_data=json.dumps(data.get("global", {}), ensure_ascii=False, indent=2)[:4000],
         country_summaries=country_summaries[:4000],
     )
-    text = chat_simple(prompt, max_tokens=3000)
-    return {"chapter_content": text, "message": "行动建议章节生成完成"}
+    return _llm_chapter(prompt, "行动建议章节生成完成")
 
 
 def _finalize_report(app_name, outline, chapters, current_date, total_reviews=0):
@@ -451,8 +456,7 @@ def _finalize_report(app_name, outline, chapters, current_date, total_reviews=0)
         chapters=chapters_text,
         total_reviews=total_reviews,
     )
-    text = chat_simple(prompt, max_tokens=8000)
-    return {"report": text, "message": "报告格式化完成"}
+    return _llm_chapter(prompt, "报告格式化完成", max_tokens=8000, key="report")
 
 
 # ── Tool Dispatcher ─────────────────────────────────────────────

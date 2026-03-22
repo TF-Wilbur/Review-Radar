@@ -5,20 +5,25 @@ import plotly.graph_objects as go
 import json
 import time
 import os
+import html as html_mod
 import hashlib
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
-load_dotenv()
+import review_radar.config  # noqa: F401 — 确保 load_dotenv 被调用
 
 from review_radar.scrapers import search_app_store, search_google_play
 from review_radar.availability import check_availability_sync, COUNTRIES
 from review_radar.agent import ReviewRadarAgent
 from review_radar.report import save_report
+from review_radar.providers import list_provider_names, get_provider, fetch_models
+from review_radar.llm import set_runtime_config, check_health
+from review_radar.history import save_analysis, list_analyses, get_analysis
 
 # ── 文件缓存（防 session 丢失）──
-CACHE_DIR = Path("/tmp/review_radar_cache")
+from review_radar.config import CACHE_TTL, CACHE_DIR as _CACHE_DIR_CFG
+CACHE_DIR = _CACHE_DIR_CFG or Path(tempfile.gettempdir()) / "review_radar_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 
@@ -29,6 +34,7 @@ def _cache_key(app_name: str, countries: list, platforms: list, count: int) -> s
 
 def _save_cache(key: str, data: dict):
     path = CACHE_DIR / f"{key}.json"
+    data["_cache_timestamp"] = time.time()
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
@@ -36,7 +42,12 @@ def _load_cache(key: str) -> dict | None:
     path = CACHE_DIR / f"{key}.json"
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            # TTL 检查
+            ts = data.pop("_cache_timestamp", 0)
+            if time.time() - ts > CACHE_TTL:
+                return None
+            return data
         except Exception:
             return None
     return None
@@ -96,6 +107,123 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# ── 侧边栏：LLM 配置 ──
+with st.sidebar:
+    st.markdown("### ⚙️ LLM 配置")
+
+    # localStorage 读写（通过 streamlit query params 模拟持久化）
+    if "llm_provider" not in st.session_state:
+        st.session_state["llm_provider"] = "MiniMax"
+    if "llm_api_key" not in st.session_state:
+        st.session_state["llm_api_key"] = ""
+    if "llm_model" not in st.session_state:
+        st.session_state["llm_model"] = ""
+    if "llm_base_url" not in st.session_state:
+        st.session_state["llm_base_url"] = ""
+    if "llm_health_ok" not in st.session_state:
+        st.session_state["llm_health_ok"] = None
+    if "llm_models_list" not in st.session_state:
+        st.session_state["llm_models_list"] = []
+
+    provider_names = list_provider_names()
+    selected_provider = st.selectbox(
+        "供应商",
+        provider_names,
+        index=provider_names.index(st.session_state["llm_provider"])
+        if st.session_state["llm_provider"] in provider_names else 0,
+        key="_llm_provider_select",
+    )
+
+    # 供应商切换时更新 base_url
+    provider_cfg = get_provider(selected_provider)
+    if selected_provider != st.session_state.get("llm_provider"):
+        st.session_state["llm_provider"] = selected_provider
+        st.session_state["llm_base_url"] = provider_cfg["base_url"]
+        st.session_state["llm_model"] = provider_cfg["default_model"]
+        st.session_state["llm_health_ok"] = None
+        st.session_state["llm_models_list"] = []
+
+    # 自定义供应商显示 base_url 输入框
+    if selected_provider == "自定义":
+        base_url = st.text_input("Base URL", value=st.session_state.get("llm_base_url", ""), key="_llm_base_url")
+        st.session_state["llm_base_url"] = base_url
+    else:
+        base_url = provider_cfg["base_url"]
+        st.session_state["llm_base_url"] = base_url
+        st.caption(f"Base URL: `{base_url}`")
+
+    api_key = st.text_input("API Key", value=st.session_state.get("llm_api_key", ""), type="password", key="_llm_api_key")
+    st.session_state["llm_api_key"] = api_key
+
+    # 获取模型列表按钮
+    col_fetch, col_health = st.columns(2)
+    with col_fetch:
+        if st.button("获取模型", disabled=not api_key or not base_url):
+            with st.spinner("获取中..."):
+                models = fetch_models(api_key, base_url)
+                st.session_state["llm_models_list"] = models
+                if models:
+                    st.success(f"找到 {len(models)} 个模型")
+                else:
+                    st.warning("未获取到模型列表")
+
+    with col_health:
+        if st.button("测试连接", disabled=not api_key or not base_url):
+            with st.spinner("测试中..."):
+                model_to_test = st.session_state.get("llm_model", "") or provider_cfg["default_model"]
+                ok, msg = check_health(api_key, base_url, model_to_test)
+                st.session_state["llm_health_ok"] = ok
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+
+    # 模型选择
+    models_list = st.session_state.get("llm_models_list", [])
+    current_model = st.session_state.get("llm_model", "") or provider_cfg["default_model"]
+    if models_list:
+        default_idx = models_list.index(current_model) if current_model in models_list else 0
+        selected_model = st.selectbox("模型", models_list, index=default_idx, key="_llm_model_select")
+    else:
+        selected_model = st.text_input("模型", value=current_model, key="_llm_model_input")
+    st.session_state["llm_model"] = selected_model
+
+    # 应用配置到运行时
+    if api_key and base_url and selected_model:
+        set_runtime_config(api_key=api_key, base_url=base_url, model=selected_model)
+
+    # 健康状态指示
+    health = st.session_state.get("llm_health_ok")
+    if health is True:
+        st.caption("🟢 LLM 连接正常")
+    elif health is False:
+        st.caption("🔴 LLM 连接失败，请检查配置")
+    elif not api_key:
+        st.caption("⚠️ 请输入 API Key")
+
+    st.markdown("---")
+    st.caption("配置仅在当前会话有效。")
+
+    # ── 历史记录 ──
+    st.markdown("### 📋 分析历史")
+    history = list_analyses(limit=20)
+    if history:
+        for h in history:
+            ts = datetime.fromtimestamp(h["timestamp"]).strftime("%m-%d %H:%M")
+            label = f'{h["app_name"]} ({ts}, {h["review_count"]} 条)'
+            if st.button(label, key=f"hist_{h['id']}"):
+                record = get_analysis(h["id"])
+                if record:
+                    st.session_state.report = record.get("report_text", "")
+                    st.session_state.aggregated = record.get("aggregated")
+                    st.session_state.analyzed_reviews = None
+                    st.session_state.confirmed_name = record.get("app_name", "")
+                    st.session_state.elapsed = 0
+                    st.session_state.step = 4
+                    st.rerun()
+    else:
+        st.caption("暂无历史记录")
+
 # ── 标题 ──
 st.markdown('<div class="main-title">Review Radar</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">输入 App 名字，自动分析用户评论，生成洞察报告</div>', unsafe_allow_html=True)
@@ -118,10 +246,199 @@ st.markdown("---")
 # ════════════════════════════════════════════════════════════════
 # 辅助函数（必须在 Step 逻辑之前定义）
 # ════════════════════════════════════════════════════════════════
-def _render_charts(data: dict, title: str, analyzed_reviews: list[dict] | None = None):
-    """渲染一组图表（情感饼图 + 分类柱状图 + 评分分布 + 版本趋势 + 痛点下钻 + 关键词）"""
-    import pandas as pd
+def _render_sentiment_pie(sentiment: dict, title: str):
+    """情感分布饼图"""
+    colors_map = {"positive": "#4CAF50", "negative": "#E57373", "neutral": "#BDBDBD"}
+    labels_cn = {"positive": "正面", "negative": "负面", "neutral": "中性"}
+    fig = go.Figure(data=[go.Pie(
+        labels=[labels_cn.get(k, k) for k in sentiment.keys()],
+        values=list(sentiment.values()),
+        marker=dict(colors=[colors_map.get(k, "#999") for k in sentiment.keys()]),
+        hole=0.45, textinfo="label+percent", textfont=dict(size=14),
+    )])
+    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), height=280,
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
 
+
+def _render_category_bar(categories: dict, title: str):
+    """评论分类柱状图"""
+    sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
+    fig2 = go.Figure(data=[go.Bar(
+        x=[c[1] for c in sorted_cats], y=[c[0] for c in sorted_cats],
+        orientation='h', marker_color="#37352F",
+    )])
+    fig2.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
+                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, autorange="reversed"))
+    st.plotly_chart(fig2, use_container_width=True)
+
+
+def _render_rating_dist(rating_dist: dict, title: str):
+    """评分分布柱状图"""
+    stars = sorted(rating_dist.keys(), key=lambda x: int(x))
+    colors_rating = {1: "#E57373", 2: "#FFB74D", 3: "#FFD54F", 4: "#AED581", 5: "#4CAF50"}
+    fig3 = go.Figure(data=[go.Bar(
+        x=[f"{s} 星" for s in stars],
+        y=[rating_dist[s] for s in stars],
+        marker_color=[colors_rating.get(int(s), "#999") for s in stars],
+        text=[rating_dist[s] for s in stars],
+        textposition="outside",
+    )])
+    fig3.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
+                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                       xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
+    st.plotly_chart(fig3, use_container_width=True)
+
+
+def _render_version_trend(version_trends: dict, title: str):
+    """版本评分趋势图"""
+    vt = {k: v for k, v in version_trends.items() if k != "unknown"}
+    if not vt:
+        return
+
+    def _version_sort_key(v):
+        parts = []
+        for x in v.split('.'):
+            try: parts.append(int(x))
+            except ValueError: parts.append(0)
+        return parts
+
+    sorted_versions = sorted(vt.keys(), key=_version_sort_key)
+    fig4 = go.Figure()
+    fig4.add_trace(go.Scatter(
+        x=sorted_versions,
+        y=[vt[v]["avg_rating"] for v in sorted_versions],
+        mode="lines+markers+text",
+        text=[f'{vt[v]["avg_rating"]:.1f}' for v in sorted_versions],
+        textposition="top center",
+        marker=dict(
+            size=[max(8, min(30, vt[v]["review_count"])) for v in sorted_versions],
+            color="#37352F",
+        ),
+        line=dict(color="#37352F", width=2),
+    ))
+    fig4.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
+                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                       xaxis=dict(showgrid=False, title="版本"),
+                       yaxis=dict(showgrid=True, title="平均评分", range=[0.5, 5.5]))
+    st.plotly_chart(fig4, use_container_width=True)
+
+
+def _render_time_trend(analyzed_reviews: list[dict], title: str):
+    """情感时间趋势图（按天聚合）"""
+    import pandas as pd
+    from collections import defaultdict
+
+    dated = [r for r in analyzed_reviews if r.get("date")]
+    if len(dated) < 5:
+        return
+
+    weekly = defaultdict(lambda: {"positive": 0, "negative": 0, "neutral": 0, "total": 0})
+    for r in dated:
+        try:
+            d = pd.to_datetime(r["date"])
+            week_key = d.strftime("%Y-%m-%d")
+        except Exception:
+            continue
+        s = r.get("sentiment", "neutral")
+        weekly[week_key][s] += 1
+        weekly[week_key]["total"] += 1
+
+    if len(weekly) < 3:
+        return
+
+    st.markdown(f"**情感时间趋势 — {title}**")
+    sorted_weeks = sorted(weekly.keys())
+    fig_time = go.Figure()
+    fig_time.add_trace(go.Scatter(
+        x=sorted_weeks, y=[weekly[w]["positive"] for w in sorted_weeks],
+        name="正面", mode="lines", line=dict(color="#4CAF50", width=2), stackgroup="one",
+    ))
+    fig_time.add_trace(go.Scatter(
+        x=sorted_weeks, y=[weekly[w]["neutral"] for w in sorted_weeks],
+        name="中性", mode="lines", line=dict(color="#BDBDBD", width=2), stackgroup="one",
+    ))
+    fig_time.add_trace(go.Scatter(
+        x=sorted_weeks, y=[weekly[w]["negative"] for w in sorted_weeks],
+        name="负面", mode="lines", line=dict(color="#E57373", width=2), stackgroup="one",
+    ))
+    fig_time.update_layout(
+        margin=dict(t=20, b=20, l=20, r=20), height=280,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, title="评论数"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_time, use_container_width=True)
+
+
+def _render_mismatch_metric(data: dict, title: str):
+    """评分一致性指标"""
+    mismatch_rate = data.get("mismatch_rate", 0)
+    if mismatch_rate <= 0:
+        return
+    mismatch_count = data.get("mismatch_count", 0)
+    st.markdown(f"**评分一致性 — {title}**")
+    st.metric("评分与情感不一致率", f"{mismatch_rate:.1%}", delta=f"{mismatch_count} 条", delta_color="inverse")
+    st.caption("评分与评论内容情感不一致（如 5 星但内容负面），可能存在刷好评或误操作")
+
+
+def _render_pain_points(pain_points: list, title: str, analyzed_reviews: list[dict] | None):
+    """痛点下钻"""
+    if not pain_points:
+        return
+    st.markdown(f"**Top 痛点 — {title}**")
+    severity_cn = {"high": "🔴 高", "medium": "🟡 中", "low": "🟢 低"}
+    for i, pp in enumerate(pain_points[:10], 1):
+        desc = pp.get("description", "")
+        count = pp.get("mention_count", 0)
+        sev = severity_cn.get(pp.get("severity", "medium"), "中")
+        with st.expander(f"{i}. {desc} — 提及 {count} 次 | {sev}"):
+            if analyzed_reviews:
+                matching = [r for r in analyzed_reviews if r.get("pain_point") == desc][:5]
+                if matching:
+                    for r in matching:
+                        platform = "iOS" if r.get("platform") == "app_store" else "Android"
+                        st.markdown(
+                            f'> ★{r.get("rating", 0)} [{platform}] "{html_mod.escape(r.get("content", "")[:150])}" '
+                            f'—— v{html_mod.escape(str(r.get("version", "?")))}, {r.get("date", "?")}'
+                        )
+                else:
+                    st.caption("暂无匹配的原始评论")
+            else:
+                st.caption("暂无原始评论数据")
+
+
+def _render_feature_table(feature_stats: dict, title: str):
+    """功能满意度表格"""
+    import pandas as pd
+    if not feature_stats or len(feature_stats) < 2:
+        return
+    st.markdown(f"**功能满意度 — {title}**")
+    feat_data = []
+    for fname, fdata in feature_stats.items():
+        total = fdata.get("count", 0)
+        neg = fdata.get("negative", 0)
+        neg_rate = neg / max(total, 1)
+        feat_data.append({"功能": fname, "提及次数": total,
+                          "正面": fdata.get("positive", 0), "负面": neg,
+                          "负面率": f"{neg_rate:.0%}"})
+    feat_df = pd.DataFrame(feat_data).sort_values("负面率", ascending=False)
+    st.dataframe(feat_df, use_container_width=True, hide_index=True)
+
+
+def _render_keywords_table(keywords: list, title: str):
+    """高频关键词表格"""
+    import pandas as pd
+    if not keywords:
+        return
+    st.markdown(f"**高频关键词 — {title}**")
+    kw_data = [{"关键词": kw["word"], "频次": kw["count"]} for kw in keywords[:15]]
+    st.dataframe(pd.DataFrame(kw_data), use_container_width=True, hide_index=True)
+
+
+def _render_charts(data: dict, title: str, analyzed_reviews: list[dict] | None = None):
+    """渲染一组图表（调度函数）"""
     sentiment = data.get("sentiment_distribution", {})
     categories = data.get("category_distribution", {})
     pain_points = data.get("top_pain_points", [])
@@ -129,180 +446,44 @@ def _render_charts(data: dict, title: str, analyzed_reviews: list[dict] | None =
     rating_dist = data.get("rating_distribution", {})
     version_trends = data.get("version_trends", {})
     feature_stats = data.get("feature_stats", {})
-    mismatch_rate = data.get("mismatch_rate", 0)
 
-    # ── 第一行：情感饼图 + 分类柱状图 ──
+    # 第一行：情感饼图 + 分类柱状图
     if sentiment:
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown(f"**情感分布 — {title}**")
-            colors_map = {"positive": "#4CAF50", "negative": "#E57373", "neutral": "#BDBDBD"}
-            labels_cn = {"positive": "正面", "negative": "负面", "neutral": "中性"}
-            fig = go.Figure(data=[go.Pie(
-                labels=[labels_cn.get(k, k) for k in sentiment.keys()],
-                values=list(sentiment.values()),
-                marker=dict(colors=[colors_map.get(k, "#999") for k in sentiment.keys()]),
-                hole=0.45, textinfo="label+percent", textfont=dict(size=14),
-            )])
-            fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), height=280,
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, use_container_width=True)
-
+            _render_sentiment_pie(sentiment, title)
         with col_b:
             st.markdown(f"**评论分类 — {title}**")
             if categories:
-                sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
-                fig2 = go.Figure(data=[go.Bar(
-                    x=[c[1] for c in sorted_cats], y=[c[0] for c in sorted_cats],
-                    orientation='h', marker_color="#37352F",
-                )])
-                fig2.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                   xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, autorange="reversed"))
-                st.plotly_chart(fig2, use_container_width=True)
+                _render_category_bar(categories, title)
 
-    # ── 第二行：评分分布 + 版本趋势 ──
+    # 第二行：评分分布 + 版本趋势
     col_c, col_d = st.columns(2)
     with col_c:
         if rating_dist and any(v > 0 for v in rating_dist.values()):
             st.markdown(f"**评分分布 — {title}**")
-            stars = sorted(rating_dist.keys(), key=lambda x: int(x))
-            colors_rating = {1: "#E57373", 2: "#FFB74D", 3: "#FFD54F", 4: "#AED581", 5: "#4CAF50"}
-            fig3 = go.Figure(data=[go.Bar(
-                x=[f"{s} 星" for s in stars],
-                y=[rating_dist[s] for s in stars],
-                marker_color=[colors_rating.get(int(s), "#999") for s in stars],
-                text=[rating_dist[s] for s in stars],
-                textposition="outside",
-            )])
-            fig3.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
-                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
-            st.plotly_chart(fig3, use_container_width=True)
-
+            _render_rating_dist(rating_dist, title)
     with col_d:
         if version_trends and len(version_trends) > 1:
             st.markdown(f"**版本评分趋势 — {title}**")
-            # 过滤掉 unknown，按版本排序
-            vt = {k: v for k, v in version_trends.items() if k != "unknown"}
-            if vt:
-                sorted_versions = sorted(vt.keys())
-                fig4 = go.Figure()
-                fig4.add_trace(go.Scatter(
-                    x=sorted_versions,
-                    y=[vt[v]["avg_rating"] for v in sorted_versions],
-                    mode="lines+markers+text",
-                    text=[f'{vt[v]["avg_rating"]:.1f}' for v in sorted_versions],
-                    textposition="top center",
-                    marker=dict(
-                        size=[max(8, min(30, vt[v]["review_count"])) for v in sorted_versions],
-                        color="#37352F",
-                    ),
-                    line=dict(color="#37352F", width=2),
-                ))
-                fig4.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=280,
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                   xaxis=dict(showgrid=False, title="版本"),
-                                   yaxis=dict(showgrid=True, title="平均评分", range=[0.5, 5.5]))
-                st.plotly_chart(fig4, use_container_width=True)
+            _render_version_trend(version_trends, title)
 
-    # ── 时间趋势图（按周聚合情感变化）──
+    # 时间趋势
     if analyzed_reviews:
-        # 过滤有日期的评论
-        dated = [r for r in analyzed_reviews if r.get("date")]
-        if len(dated) >= 5:
-            from collections import defaultdict
-            weekly = defaultdict(lambda: {"positive": 0, "negative": 0, "neutral": 0, "total": 0})
-            for r in dated:
-                try:
-                    d = pd.to_datetime(r["date"])
-                    week_key = d.strftime("%Y-%m-%d")  # 按天
-                except Exception:
-                    continue
-                s = r.get("sentiment", "neutral")
-                weekly[week_key][s] += 1
-                weekly[week_key]["total"] += 1
+        _render_time_trend(analyzed_reviews, title)
 
-            if len(weekly) >= 3:
-                st.markdown(f"**情感时间趋势 — {title}**")
-                sorted_weeks = sorted(weekly.keys())
-                fig_time = go.Figure()
-                fig_time.add_trace(go.Scatter(
-                    x=sorted_weeks,
-                    y=[weekly[w]["positive"] for w in sorted_weeks],
-                    name="正面", mode="lines", line=dict(color="#4CAF50", width=2),
-                    stackgroup="one",
-                ))
-                fig_time.add_trace(go.Scatter(
-                    x=sorted_weeks,
-                    y=[weekly[w]["neutral"] for w in sorted_weeks],
-                    name="中性", mode="lines", line=dict(color="#BDBDBD", width=2),
-                    stackgroup="one",
-                ))
-                fig_time.add_trace(go.Scatter(
-                    x=sorted_weeks,
-                    y=[weekly[w]["negative"] for w in sorted_weeks],
-                    name="负面", mode="lines", line=dict(color="#E57373", width=2),
-                    stackgroup="one",
-                ))
-                fig_time.update_layout(
-                    margin=dict(t=20, b=20, l=20, r=20), height=280,
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, title="评论数"),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                )
-                st.plotly_chart(fig_time, use_container_width=True)
+    # 评分一致性
+    _render_mismatch_metric(data, title)
 
-    # ── 评分一致性指标 ──
-    if mismatch_rate > 0:
-        st.markdown(f"**评分一致性 — {title}**")
-        mismatch_count = data.get("mismatch_count", 0)
-        st.metric("评分与情感不一致率", f"{mismatch_rate:.1%}", delta=f"{mismatch_count} 条",
-                  delta_color="inverse")
-        st.caption("评分与评论内容情感不一致（如 5 星但内容负面），可能存在刷好评或误操作")
+    # 痛点下钻
+    _render_pain_points(pain_points, title, analyzed_reviews)
 
-    # ── 痛点下钻 ──
-    if pain_points:
-        st.markdown(f"**Top 痛点 — {title}**")
-        severity_cn = {"high": "🔴 高", "medium": "🟡 中", "low": "🟢 低"}
-        for i, pp in enumerate(pain_points[:10], 1):
-            desc = pp.get("description", "")
-            count = pp.get("mention_count", 0)
-            sev = severity_cn.get(pp.get("severity", "medium"), "中")
-            with st.expander(f"{i}. {desc} — 提及 {count} 次 | {sev}"):
-                if analyzed_reviews:
-                    matching = [r for r in analyzed_reviews if r.get("pain_point") == desc][:5]
-                    if matching:
-                        for r in matching:
-                            platform = "iOS" if r.get("platform") == "app_store" else "Android"
-                            st.markdown(
-                                f'> ★{r.get("rating", 0)} [{platform}] "{r.get("content", "")[:150]}" '
-                                f'—— v{r.get("version", "?")}, {r.get("date", "?")}'
-                            )
-                    else:
-                        st.caption("暂无匹配的原始评论")
-                else:
-                    st.caption("暂无原始评论数据")
+    # 功能满意度
+    _render_feature_table(feature_stats, title)
 
-    # ── 功能满意度热力图 ──
-    if feature_stats and len(feature_stats) >= 2:
-        st.markdown(f"**功能满意度 — {title}**")
-        feat_data = []
-        for fname, fdata in feature_stats.items():
-            total = fdata.get("count", 0)
-            neg = fdata.get("negative", 0)
-            neg_rate = neg / max(total, 1)
-            feat_data.append({"功能": fname, "提及次数": total,
-                              "正面": fdata.get("positive", 0), "负面": neg,
-                              "负面率": f"{neg_rate:.0%}"})
-        feat_df = pd.DataFrame(feat_data).sort_values("负面率", ascending=False)
-        st.dataframe(feat_df, use_container_width=True, hide_index=True)
-
-    # ── 关键词 ──
-    if keywords:
-        st.markdown(f"**高频关键词 — {title}**")
-        kw_data = [{"关键词": kw["word"], "频次": kw["count"]} for kw in keywords[:15]]
-        st.dataframe(pd.DataFrame(kw_data), use_container_width=True, hide_index=True)
+    # 关键词
+    _render_keywords_table(keywords, title)
 
 
 def _show_results():
@@ -421,8 +602,8 @@ def _show_results():
 
             st.markdown(
                 f'{plat_label} {stars} {sent_emoji} '
-                f'<span style="color:#787774;font-size:12px;">v{version} | {date} | {category}</span>\n\n'
-                f'> {content}',
+                f'<span style="color:#787774;font-size:12px;">v{html_mod.escape(str(version))} | {html_mod.escape(date)} | {html_mod.escape(category)}</span>\n\n'
+                f'> {html_mod.escape(content)}',
                 unsafe_allow_html=True,
             )
 
@@ -530,10 +711,10 @@ if step == 1:
 
         st.markdown(f'''
         <div class="app-card">
-            <img class="app-icon" src="{icon}" alt="icon" onerror="this.style.display='none'"/>
+            <img class="app-icon" src="{html_mod.escape(icon)}" alt="icon" onerror="this.style.display='none'"/>
             <div class="app-info">
-                <div class="app-name">{name}</div>
-                <div class="app-category">{category}</div>
+                <div class="app-name">{html_mod.escape(name)}</div>
+                <div class="app-category">{html_mod.escape(category)}</div>
                 <div style="font-size:13px;color:#787774;margin-top:4px;">
                     {"✅ App Store" if ios_result else "❌ App Store"}
                     &nbsp;|&nbsp;
@@ -577,16 +758,18 @@ elif step == 2:
 
     st.session_state.selected_platforms = selected_platforms
 
-    # 国家可用性检测
+    # 国家可用性检测（App 变更时才重新检测）
     st.markdown("**选择国家/地区：**")
 
-    if st.session_state.country_availability is None:
+    _avail_key = f"{st.session_state.app_store_id}|{st.session_state.google_play_id}"
+    if st.session_state.country_availability is None or st.session_state.get("_avail_app_key") != _avail_key:
         with st.spinner("正在检测各国家可用性（约 5-8 秒）..."):
             avail = check_availability_sync(
                 st.session_state.app_store_id,
                 st.session_state.google_play_id,
             )
             st.session_state.country_availability = avail
+            st.session_state["_avail_app_key"] = _avail_key
 
     avail = st.session_state.country_availability
 
@@ -633,7 +816,7 @@ elif step == 2:
 
     if st.button("← 返回上一步"):
         st.session_state.step = 1
-        st.session_state.country_availability = None
+        # 不再无条件清空 country_availability，只在 App 变更时重新检测
         st.rerun()
 
 # ════════════════════════════════════════════════════════════════
@@ -788,6 +971,19 @@ elif step == 4:
                 "analyzed_reviews": agent.analyzed_reviews,
                 "elapsed": elapsed,
             })
+
+        # 保存到分析历史
+        try:
+            save_analysis(
+                app_name=app_name_for_cache or "unknown",
+                countries=countries_for_cache,
+                platforms=platforms_for_cache,
+                review_count=len(agent.analyzed_reviews or []),
+                aggregated=agent.aggregated,
+                report=report,
+            )
+        except Exception:
+            pass  # 历史保存失败不影响主流程
 
         status_ui.update(label=f"分析完成（耗时 {elapsed:.0f} 秒）", state="complete", expanded=False)
 

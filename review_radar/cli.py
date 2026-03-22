@@ -3,7 +3,6 @@
 import argparse
 import time
 
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -117,7 +116,7 @@ def show_report_preview(report: str):
 
 
 def main():
-    load_dotenv()
+    import review_radar.config  # noqa: F401 — 确保 load_dotenv 被调用
 
     parser = argparse.ArgumentParser(
         description="Review Radar — App 用户评论洞察 Agent",

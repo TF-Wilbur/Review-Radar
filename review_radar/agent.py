@@ -11,8 +11,7 @@ from review_radar.tool_impl import (
     tool_generate_report, tool_feature_analysis,
 )
 from review_radar.availability import COUNTRIES
-
-BATCH_SIZE = 50  # 加大批次减少 LLM 调用次数
+from review_radar.config import BATCH_SIZE, FETCH_MAX_WORKERS, ANALYZE_MAX_WORKERS, FETCH_DELAY
 
 
 class ReviewRadarAgent:
@@ -78,6 +77,8 @@ class ReviewRadarAgent:
         use_gplay = "google_play" in platforms and google_play_id
 
         def _fetch_country(c_code):
+            import time
+            time.sleep(FETCH_DELAY)  # 简单速率限制
             return tool_fetch_reviews(
                 app_store_id=app_store_id if use_ios else None,
                 google_play_id=google_play_id if use_gplay else None,
@@ -92,7 +93,7 @@ class ReviewRadarAgent:
                 "tool": "fetch_reviews",
                 "input_summary": f"并发抓取 {len(countries)} 个国家评论 (count={count_per_platform})",
             })
-            with ThreadPoolExecutor(max_workers=min(len(countries), 5)) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(countries), FETCH_MAX_WORKERS)) as executor:
                 futures = {executor.submit(_fetch_country, c): c for c in countries}
                 for future in as_completed(futures):
                     c_code = futures[future]
@@ -125,6 +126,16 @@ class ReviewRadarAgent:
         if not all_reviews:
             return "未抓取到任何评论。"
 
+        # 评论去重（多国家抓取可能出现重复）
+        seen_ids = set()
+        deduped = []
+        for r in all_reviews:
+            rid = r["id"]
+            if rid not in seen_ids:
+                seen_ids.add(rid)
+                deduped.append(r)
+        all_reviews = deduped
+
         # 样本量检查
         if len(all_reviews) < 100:
             self.on_event("warning", {
@@ -142,7 +153,7 @@ class ReviewRadarAgent:
                 "tool": "analyze_batch",
                 "input_summary": f"并发分析 {len(batches)} 个批次（共 {len(all_reviews)} 条）",
             })
-            with ThreadPoolExecutor(max_workers=min(len(batches), 3)) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(batches), ANALYZE_MAX_WORKERS)) as executor:
                 futures = {executor.submit(tool_analyze_batch, i, batch): i for i, batch in enumerate(batches)}
                 for future in as_completed(futures):
                     idx = futures[future]
@@ -380,6 +391,11 @@ class ReviewRadarAgent:
         mismatch_count = 0
 
         for i, r in enumerate(results):
+            # sentiment_score 范围校验
+            score = r.get("sentiment_score", 0)
+            if isinstance(score, (int, float)):
+                r["sentiment_score"] = max(-1.0, min(1.0, float(score)))
+
             s = r.get("sentiment", "neutral")
             sentiment_dist[s] = sentiment_dist.get(s, 0) + 1
 

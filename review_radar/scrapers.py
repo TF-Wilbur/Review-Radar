@@ -1,15 +1,17 @@
 """评论抓取封装 — App Store (iTunes RSS/API) + Google Play 并行抓取"""
 
-import asyncio
 import hashlib
 import json
-import xml.etree.ElementTree as ET
+import logging
 from datetime import datetime
 
 import httpx
 from google_play_scraper import Sort, reviews as gplay_reviews, search as gplay_search, app as gplay_app
 
 from review_radar.models import Review, AppInfo
+from review_radar.config import COUNTRY_LANG
+
+logger = logging.getLogger("review_radar.scrapers")
 
 
 # ── App 搜索 ────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ def search_app_store(app_name: str, country: str = "us") -> dict | None:
             "category": app.get("primaryGenreName"),
         }
     except Exception as e:
-        print(f"[search_app_store] 搜索失败: {e}")
+        logger.warning("App Store 搜索失败: %s", e)
         return None
 
 
@@ -69,7 +71,7 @@ def search_google_play(app_name: str, bundle_id: str | None = None) -> dict | No
 
         return None
     except Exception as e:
-        print(f"[search_google_play] 搜索失败: {e}")
+        logger.warning("Google Play 搜索失败: %s", e)
         return None
 
 
@@ -151,19 +153,22 @@ def fetch_app_store_reviews(app_id: str, country: str = "us", count: int = 200) 
                     version=version,
                     title=title if title else None,
                     country=country,
+                    language=COUNTRY_LANG.get(country, "en"),
                 ))
 
             page += 1
 
         except Exception as e:
-            print(f"[fetch_app_store] 第 {page} 页抓取失败: {e}")
+            logger.warning("App Store 第 %d 页抓取失败: %s", page, e)
             break
 
     return reviews[:count]
 
 
-def fetch_google_play_reviews(app_id: str, count: int = 200, country: str = "us", lang: str = "zh") -> list[Review]:
+def fetch_google_play_reviews(app_id: str, count: int = 200, country: str = "us", lang: str = "") -> list[Review]:
     """抓取 Google Play 评论"""
+    if not lang:
+        lang = COUNTRY_LANG.get(country, "en")
     reviews = []
     try:
         result, _ = gplay_reviews(
@@ -190,41 +195,9 @@ def fetch_google_play_reviews(app_id: str, count: int = 200, country: str = "us"
                 version=r.get("reviewCreatedVersion"),
                 thumbs_up=r.get("thumbsUpCount", 0),
                 country=country,
+                language=lang,
             ))
     except Exception as e:
-        print(f"[fetch_google_play] 抓取失败: {e}")
+        logger.warning("Google Play 抓取失败: %s", e)
 
     return reviews
-
-
-async def fetch_all_reviews(
-    app_store_id: str | None,
-    google_play_id: str | None,
-    count: int = 200,
-    country: str = "us",
-) -> list[Review]:
-    """并行抓取 App Store + Google Play 评论"""
-    loop = asyncio.get_event_loop()
-    tasks = []
-
-    if app_store_id:
-        tasks.append(loop.run_in_executor(
-            None, fetch_app_store_reviews, app_store_id, country, count
-        ))
-    if google_play_id:
-        tasks.append(loop.run_in_executor(
-            None, fetch_google_play_reviews, google_play_id, count, country
-        ))
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    all_reviews = []
-    for r in results:
-        if isinstance(r, list):
-            all_reviews.extend(r)
-        elif isinstance(r, Exception):
-            print(f"[fetch_all_reviews] 抓取异常: {r}")
-
-    # 按日期倒序
-    all_reviews.sort(key=lambda x: x.date, reverse=True)
-    return all_reviews
