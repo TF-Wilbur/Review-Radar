@@ -652,6 +652,9 @@ def _show_results():
             kw_lower = filter_keyword.lower()
             filtered = [r for r in filtered if kw_lower in (r.get("content") or "").lower()]
 
+        # 按日期降序排列（最新的在前）
+        filtered.sort(key=lambda r: r.get("date") or "", reverse=True)
+
         st.caption(f"共 {len(filtered)} 条评论（筛选自 {len(analyzed_reviews)} 条）")
 
         # 分页展示
