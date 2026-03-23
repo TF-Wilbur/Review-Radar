@@ -1009,6 +1009,10 @@ elif step == 3:
                 if st.button("确认开始", use_container_width=True, type="primary"):
                     st.session_state.count = actual_count
                     st.session_state.confirm_start = False
+                    # 清除旧的分析结果，确保使用新参数重新抓取
+                    st.session_state.report = None
+                    st.session_state.aggregated = None
+                    st.session_state.analyzed_reviews = None
                     st.session_state.step = 4
                     st.rerun()
             with col_no:
