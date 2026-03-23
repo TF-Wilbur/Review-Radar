@@ -317,72 +317,103 @@ class ReviewRadarAgent:
                         c_data = self._apply_semantic_dedup_pain_points(c_data, pp_merge_map)
                     aggregated["by_country"][c_code]["combined"] = c_data
 
-        # ── Phase 4: 生成报告（多国家动态章节）──
+        # ── Phase 4: 生成报告（多国家动态章节，并发优化）──
         self.on_event("phase", {"phase": "Phase 4: 生成报告", "phase_number": 4, "total_phases": 5})
 
-        # Step 0: 执行摘要
-        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "生成执行摘要"})
-        exec_summary_result = tool_generate_report(
-            app_name=display_name, analysis_data=aggregated,
-            report_step="executive_summary", countries=countries, platforms=platforms,
-        )
-        self.on_event("tool_result", {"tool": "generate_report", "message": exec_summary_result.get("message", "")})
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Step 1: 大纲
-        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "生成大纲"})
-        outline_result = tool_generate_report(
-            app_name=display_name, analysis_data=aggregated,
-            report_step="outline", countries=countries, platforms=platforms,
-        )
+        # Wave 1: 执行摘要、大纲、总览 并发生成
+        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "并发生成执行摘要+大纲+总览"})
+
+        def _gen_exec_summary():
+            return tool_generate_report(
+                app_name=display_name, analysis_data=aggregated,
+                report_step="executive_summary", countries=countries, platforms=platforms,
+            )
+
+        def _gen_outline():
+            return tool_generate_report(
+                app_name=display_name, analysis_data=aggregated,
+                report_step="outline", countries=countries, platforms=platforms,
+            )
+
+        def _gen_overview():
+            return tool_generate_report(
+                app_name=display_name, analysis_data=aggregated,
+                report_step="overview", countries=countries, platforms=platforms,
+            )
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_exec = executor.submit(_gen_exec_summary)
+            f_outline = executor.submit(_gen_outline)
+            f_overview = executor.submit(_gen_overview)
+
+        exec_summary_result = f_exec.result()
+        outline_result = f_outline.result()
+        overview_result = f_overview.result()
         outline = outline_result.get("outline", "")
-        self.on_event("tool_result", {"tool": "generate_report", "message": outline_result.get("message", "")})
 
+        self.on_event("tool_result", {"tool": "generate_report", "message": "执行摘要+大纲+总览 生成完成"})
+
+        # Wave 2: 各国家章节 + 跨国对比 + 行动建议 并发生成
+        wave2_tasks = {}
+        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "并发生成国家章节+跨国对比+行动建议"})
+
+        with ThreadPoolExecutor(max_workers=max(len(countries) + 2, 4)) as executor:
+            # 各国家章节（依赖 outline，但彼此独立）
+            for c_code in countries:
+                def _gen_country(cc=c_code):
+                    return tool_generate_report(
+                        app_name=display_name, analysis_data=aggregated,
+                        report_step="country", countries=countries, platforms=platforms,
+                        country_code=cc, outline=outline, sample_reviews=all_reviews,
+                    )
+                wave2_tasks[executor.submit(_gen_country)] = ("country", c_code)
+
+            # 跨国对比（多国家时）
+            if len(countries) > 1:
+                def _gen_cross():
+                    return tool_generate_report(
+                        app_name=display_name, analysis_data=aggregated,
+                        report_step="cross_country", countries=countries, platforms=platforms,
+                    )
+                wave2_tasks[executor.submit(_gen_cross)] = ("cross_country", None)
+
+            # 行动建议
+            def _gen_action():
+                return tool_generate_report(
+                    app_name=display_name, analysis_data=aggregated,
+                    report_step="action", countries=countries, platforms=platforms,
+                )
+            wave2_tasks[executor.submit(_gen_action)] = ("action", None)
+
+        # 收集 Wave 2 结果，按类型归位
+        country_chapters = {}  # c_code -> content
+        cross_chapter = ""
+        action_chapter = ""
+        for future in wave2_tasks:
+            task_type, task_key = wave2_tasks[future]
+            result = future.result()
+            if task_type == "country":
+                country_chapters[task_key] = result.get("chapter_content", "")
+            elif task_type == "cross_country":
+                cross_chapter = result.get("chapter_content", "")
+            elif task_type == "action":
+                action_chapter = result.get("chapter_content", "")
+
+        self.on_event("tool_result", {"tool": "generate_report", "message": "国家章节+跨国对比+行动建议 生成完成"})
+
+        # 按正确顺序组装章节
         chapters = []
-
-        # 执行摘要作为第一个章节
         chapters.append(exec_summary_result.get("chapter_content", ""))
-
-        # Step 2: 总览
-        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "生成总览"})
-        overview = tool_generate_report(
-            app_name=display_name, analysis_data=aggregated,
-            report_step="overview", countries=countries, platforms=platforms,
-        )
-        chapters.append(overview.get("chapter_content", ""))
-        self.on_event("tool_result", {"tool": "generate_report", "message": overview.get("message", "")})
-
-        # Step 3: 各国家章节
+        chapters.append(overview_result.get("chapter_content", ""))
         for c_code in countries:
-            c_name = COUNTRIES.get(c_code, c_code)
-            self.on_event("tool_call", {"tool": "generate_report", "input_summary": f"生成 {c_name} 分析"})
-            ch = tool_generate_report(
-                app_name=display_name, analysis_data=aggregated,
-                report_step="country", countries=countries, platforms=platforms,
-                country_code=c_code, outline=outline, sample_reviews=all_reviews,
-            )
-            chapters.append(ch.get("chapter_content", ""))
-            self.on_event("tool_result", {"tool": "generate_report", "message": ch.get("message", "")})
+            chapters.append(country_chapters.get(c_code, ""))
+        if cross_chapter:
+            chapters.append(cross_chapter)
+        chapters.append(action_chapter)
 
-        # Step 4: 跨国对比（多国家时）
-        if len(countries) > 1:
-            self.on_event("tool_call", {"tool": "generate_report", "input_summary": "生成跨国对比"})
-            cross = tool_generate_report(
-                app_name=display_name, analysis_data=aggregated,
-                report_step="cross_country", countries=countries, platforms=platforms,
-            )
-            chapters.append(cross.get("chapter_content", ""))
-            self.on_event("tool_result", {"tool": "generate_report", "message": cross.get("message", "")})
-
-        # Step 5: 行动建议
-        self.on_event("tool_call", {"tool": "generate_report", "input_summary": "生成行动建议"})
-        action = tool_generate_report(
-            app_name=display_name, analysis_data=aggregated,
-            report_step="action", countries=countries, platforms=platforms,
-        )
-        chapters.append(action.get("chapter_content", ""))
-        self.on_event("tool_result", {"tool": "generate_report", "message": action.get("message", "")})
-
-        # Step 6: 格式化
+        # Wave 3: 格式化（依赖所有章节）
         self.on_event("tool_call", {"tool": "generate_report", "input_summary": "格式化报告"})
         final = tool_generate_report(
             app_name=display_name, analysis_data=aggregated,
