@@ -319,7 +319,7 @@ def _render_sentiment_pie(sentiment: dict, title: str):
     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), height=280,
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=f"sentiment_{title}")
 
 
 def _render_category_bar(categories: dict, title: str):
@@ -333,7 +333,7 @@ def _render_category_bar(categories: dict, title: str):
                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                        xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, autorange="reversed"),
                        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, key=f"category_{title}")
 
 
 def _render_rating_dist(rating_dist: dict, title: str):
@@ -351,7 +351,7 @@ def _render_rating_dist(rating_dist: dict, title: str):
                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                        xaxis=dict(showgrid=False), yaxis=dict(showgrid=False),
                        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, use_container_width=True, key=f"rating_{title}")
 
 
 def _render_version_trend(version_trends: dict, title: str):
@@ -387,7 +387,7 @@ def _render_version_trend(version_trends: dict, title: str):
                        xaxis=dict(showgrid=False, title="版本"),
                        yaxis=dict(showgrid=True, title="平均评分", range=[0.5, 5.5]),
                        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"))
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, use_container_width=True, key=f"version_{title}")
 
 
 def _render_time_trend(analyzed_reviews: list[dict], title: str):
@@ -437,7 +437,7 @@ def _render_time_trend(analyzed_reviews: list[dict], title: str):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color="#1E1E2E"),
     )
-    st.plotly_chart(fig_time, use_container_width=True)
+    st.plotly_chart(fig_time, use_container_width=True, key=f"time_trend_{title}")
 
 
 def _render_mismatch_metric(data: dict, title: str):
